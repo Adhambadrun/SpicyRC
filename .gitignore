@@ -1,0 +1,30 @@
+# Build outputs (generated)
+build/obj/
+*.res
+*.obj
+
+# Portable artifacts (generated on build) — keep README but ignore binaries
+dist/SpicyLamar.exe
+dist/SpicyLamar-Portable.zip
+dist/*.exe
+dist/*.zip
+
+# Keep dist/README.txt and dist/README docs tracked
+!dist/README.txt
+
+# Python / toolchain scratch
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE / OS
+.vs/
+.vscode/
+*.user
+*.suo
+Thumbs.db
+.DS_Store
+
+# Temp
+*.tmp
+*.log

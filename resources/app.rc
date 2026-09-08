@@ -1,0 +1,37 @@
+#include <windows.h>
+
+// Icon
+1 ICON "icon.ico"
+
+// Manifest (24 = RT_MANIFEST)
+1 24 "app.manifest"
+
+// Version Info — v1.0 Integrated (single window, TURBO)
+1 VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION  1,0,0,0
+FILEFLAGSMASK   0x3FL
+FILEFLAGS       0x0L
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "SpicyLamar"
+            VALUE "FileDescription",  "Spicy Lamar v1.0 Integrated"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "InternalName",     "SpicyLamar"
+            VALUE "LegalCopyright",   "\xA9 SpicyLamar"
+            VALUE "OriginalFilename", "SpicyLamar.exe"
+            VALUE "ProductName",      "Spicy Lamar"
+            VALUE "ProductVersion",   "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
