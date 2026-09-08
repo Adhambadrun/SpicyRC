@@ -31,13 +31,41 @@ Palette: Obsidian #050505, Settings #1A1A1A, Panel #101010, Display #161616, Btn
 
 > **Mockup image:** see `docs/mockup.png` (generated) — shows the exact rendered layout with neon histogram and docked keypad. The window is `WS_POPUP | WS_CAPTION | WS_SYSMENU`, `WS_EX_TOPMOST` toggleable, draggable by the settings bar (`HTCAPTION`).
 
-## Quick Start (portable .exe)
-1. Grab `dist\SpicyLamar.exe` (or `dist\SpicyLamar-Portable.zip`) — single file.
-2. Copy anywhere, double-click. No install, no admin, no UAC, no VC++ Redist.
-3. One window appears (980×620). Tray icon named “Spicy Lamar”.
-4. Dashboard hotkeys: **F8 self-test**, **F9 toggle dashboard**, **F11 pause/start**, **F12 exit**.
+> ## ⚠️ Two run modes
+> **Recommended — feature inside RingCentral itself:** run `build.bat`. It unpacks RC's
+> `resources/app.asar`, injects the Spicy Lamar engine (`ringcentral-patch/spicy-engine/`), repacks,
+> and **launches the patched RingCentral** — a 🌶 SPICY button + “Spicy Lamar — Auto-Answer” entry
+> appear in RC's own dialer/⚙ menu (no popup, no separate exe). It needs your RingCentral app
+> (auto-detected if installed, or drop a `RingCentral.zip` / app folder in the repo root). If none is
+> found it opens `docs/INAPP_GUIDE.html` with the exact steps.
+>
+> **Legacy — standalone demo exe:** run `build_standalone.bat` to compile + launch the old separate
+> 980×620 mirror window. This is optional and no longer the intended flow.
 
-> SmartScreen “Windows protected your PC” → **More info → Run anyway** (or Properties → Unblock).
+## Quick Start (feature inside RingCentral)
+1. Double-click **`build.bat`**. It needs your RingCentral app:
+   - auto-detects the app you already run (`%LocalAppData%\RingCentral`), **or**
+   - accepts a `RingCentral.zip` / unpacked app folder (with `resources\app.asar`) placed in the repo root.
+2. build.bat unpacks `app.asar`, injects `ringcentral-patch\spicy-engine\`, repacks, and **launches the patched RingCentral**.
+3. Open the dialer → you'll see a **🌶 SPICY** button and a **“Spicy Lamar — Auto-Answer [ON]”** entry in the ⚙ menu.
+4. No RC found? build.bat opens `docs/INAPP_GUIDE.html` telling you exactly what to drop in (so it never silently does nothing).
+
+> Tuning: if no 🌶 button appears after first launch, open the dialer DevTools (**Ctrl+Shift+I**), read the
+> `[SpicyLamar]` logs, and adjust the DOM selectors in `ringcentral-patch\spicy-engine\spicy-config.js`
+> to your RC version, then re-run build.bat.
+
+## In-app engine (`ringcentral-patch/spicy-engine/`)
+| File | Runs in | Role |
+|---|---|---|
+| `spicy-renderer.js` | RC renderer | Injects the 🌶 SPICY button + ⚙ menu item; auto-answers calls and sends DTMF **inside** RC (no popup). |
+| `spicy-main.js` | RC main | Pin-on-top (`setAlwaysOnTop`) + toggle persistence; fully guarded. |
+| `spicy-preload.js` | RC preload | `window.spicyLamar` contextBridge (optional). |
+| `spicy-config.js` | main+renderer | One place to tune DOM selectors / timing for your RC build. |
+
+See `ringcentral-patch/README.md` and `docs/INAPP_GUIDE.html` for details.
+
+> **Legacy standalone demo** (optional): `build_standalone.bat` compiles `SpicyLamar.cs` and **launches**
+> the old 980×620 mirror window. It is not the intended flow anymore.
 
 ## Controls
 | Input | Action |
@@ -64,37 +92,46 @@ Palette: Obsidian #050505, Settings #1A1A1A, Panel #101010, Display #161616, Btn
 - Startup log: `Spicy Lamar v1.0 Integrated online. Keypad docked inside dashboard (no separate window).`
 
 ## Build Instructions
-### C++ (Recommended for Performance)
-```bat
-build_portable.bat
-:: or: powershell -ExecutionPolicy Bypass -File build\build.ps1
-:: → dist\SpicyLamar.exe  (static /MT, -DSPICY_LAMAR_TURBO, Win10/11 x64)
-```
-
-### C# (Instant Build)
+### Recommended — In-app (feature inside RingCentral)
 ```bat
 build.bat
-:: → dist\SpicyLamar.exe  (WinForms mirror: Panel settingsBar Dock Top, keypadPanel Dock Right, leftPane Fill)
+:: 1) locates RingCentral, 2) unpacks + injects ringcentral-patch\spicy-engine\,
+:: 3) repacks resources\app.asar, 4) LAUNCHES the patched RingCentral.
+:: No RC found → opens docs\INAPP_GUIDE.html so you always get a result.
+```
+
+### Legacy — standalone demo exe (optional)
+```bat
+build_standalone.bat     :: compiles SpicyLamar.cs → launches dist\SpicyLamar.exe
+build_portable.bat       :: C++ static /MT monolith (src/main.cpp), TURBO 200Hz
+:: or: powershell -ExecutionPolicy Bypass -File build\build.ps1
 ```
 
 ### Helpers in `build\`
-- `build.ps1` / `build.bat` — C++ monolith (src/main.cpp 980×620, 38px bar, 280px panel)
+- `build.bat` / `build.ps1` — C++ monolith (src/main.cpp 980×620, 38px bar, 280px panel)
 - `verify_deps.ps1` — checks VC++ + csc.exe + resources
 - `verify_artifact.ps1` — PE32+ x64 GUI, icon, version 1.0 Integrated, no popup string
 - `package_portable.ps1` — zips `SpicyLamar.exe` + `README.txt` → `SpicyLamar-Portable.zip`
 
-## Portability
+## Portability (legacy standalone exe)
 Zero external dependencies. Static `/MT` CRT. Manifest `asInvoker`. Win10/11 x64 (ARM64 via x64 emulation). No UAC.
 
 ## File Structure
 ```
 SpicyLamar-Integrated/
-├── src/main.cpp          // C++ monolith — single window + integrated keypad + settings bar + Engine::SendDtmf (980x620, 38px bar, 280px panel)
-├── SpicyLamar.cs         // C# WinForms mirror — Panel settingsBar Dock Top, Panel keypadPanel Dock Right, Panel leftPane Fill, dropdown Panel
+├── build.bat              // ★ Recommended: patch RC in-app + LAUNCH it (opens guide if no RC found)
+├── build_standalone.bat   // legacy C# mirror compile + launch
+├── src/main.cpp           // C++ monolith (legacy standalone mirror)
+├── SpicyLamar.cs          // C# WinForms mirror (legacy standalone)
+├── ringcentral-patch/     // ★ in-app engine + patch pipeline
+│   ├── apply-patch.ps1        // unpack → inject → repack → launch
+│   ├── spicy-engine/          // spicy-renderer.js, spicy-main.js, spicy-preload.js, spicy-config.js
+│   ├── inject-spicy-button.js, electron-main-patch.js, patch.diff, styles/
+│   └── README.md
 ├── build/build.ps1, build.bat, build_portable.bat, CMakeLists.txt, verify_*.ps1, package_portable.ps1
 ├── resources/app.manifest (asInvoker), app.rc (1.0.0.0), icon.ico, icon_src.png
 ├── dist/README.txt
-├── docs/INTEGRATED_PROMPT.md, README.md, QUICKSTART.txt, mockup.png
+├── docs/INAPP_GUIDE.html, INTEGRATED_PROMPT.md, README.md, QUICKSTART.txt, mockup*.png
 └── README.md
 ```
 

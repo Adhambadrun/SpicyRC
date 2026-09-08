@@ -1,50 +1,62 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
-title SpicyLamar v1.0 Integrated - C# Instant Build
-
+title Spicy Lamar - Patch & Launch RingCentral (feature inside RC)
 pushd "%~dp0" >nul
 cd /d "%~dp0"
 
 echo ==========================================================
-echo  SPICY LAMAR v1.0 Integrated - C# INSTANT BUILD
-echo  980x620 single window | WinForms mirror | docked keypad
+echo  SPICY LAMAR v1.0 - In-App Build for RingCentral
+echo  Puts the feature INSIDE RingCentral's own app, then opens it.
+echo ==========================================================
+echo.
+echo  What this does:
+echo   1. Locates your RingCentral (zip / installed app).
+echo   2. Unpacks resources\app.asar and injects the Spicy engine:
+echo        - a  [Chili] SPICY button in the dialer row
+echo        - a  "Spicy Lamar - Auto-Answer" item in the Settings menu
+echo        - in-app auto-answer + DTMF + Pin-on-top  (no popup, no alt-exe)
+echo   3. Repacks app.asar and LAUNCHES the patched RingCentral.
+echo.
 echo ==========================================================
 
-set "CSC=%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-if not exist "%CSC%" set "CSC=%SystemRoot%\Microsoft.NET\Framework\v4.0.30319\csc.exe"
-if not exist "%CSC%" (
-    echo [ERROR] .NET Framework 4.x C# compiler not found at %CSC%.
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%PS%" (
+    echo [ERROR] Windows PowerShell 5.1 not found.
     pause
     exit /b 1
 )
 
-if not exist "%~dp0dist" mkdir "%~dp0dist"
-set "OUT=%~dp0dist\SpicyLamar.exe"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0ringcentral-patch\apply-patch.ps1"
+set "RC=%ERRORLEVEL%"
 
-set "ICON_PARAM="
-if exist "resources\icon.ico" set "ICON_PARAM=/win32icon:resources\icon.ico"
+if "%RC%"=="2" (
+    echo.
+    echo ==========================================================
+    echo  NO RINGCENTRAL FOUND - nothing could be patched/launched.
+    echo ==========================================================
+    echo  Open the guide below (launched in your browser) for the
+    echo  exact one thing you need to drop in, then re-run build.bat.
+    echo.
+    start "" "%~dp0docs\INAPP_GUIDE.html"
+    echo  Guide opened:  docs\INAPP_GUIDE.html
+    echo.
+    pause
+    exit /b 2
+)
 
-set "MANIFEST_PARAM="
-if exist "resources\app.manifest" set "MANIFEST_PARAM=/win32manifest:resources\app.manifest"
-
-echo [1/2] Compiling SpicyLamar.cs (Integrated, Panel layout: settingsBar Top + keypad Right + left Fill)...
-"%CSC%" /nologo /target:winexe /optimize+ /platform:anycpu /utf8output ^
-    /codepage:65001 ^
-    /r:System.dll,System.Drawing.dll,System.Windows.Forms.dll,System.Core.dll ^
-    !ICON_PARAM! !MANIFEST_PARAM! /out:"%OUT%" SpicyLamar.cs
-
-if errorlevel 1 (
-    echo [ERROR] Compilation failed - see messages above.
+if "%RC%" NEQ "0" (
+    echo.
+    echo [ERROR] Patch & launch failed - see messages above.
     pause
     exit /b 1
 )
 
 echo.
 echo ==========================================================
-echo  SUCCESS - portable executable created at:
-echo  "%OUT%"
-echo  Single window 980x620 | Keypad docked inside
+echo  DONE - RingCentral was launched with Spicy Lamar inside it.
+echo  Open the dialer: you should see the [Chili] SPICY button
+echo  and "Spicy Lamar - Auto-Answer [ON]" in the Settings menu.
 echo ==========================================================
 timeout /t 5 >nul 2>&1 || pause
 exit /b 0

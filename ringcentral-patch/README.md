@@ -1,4 +1,16 @@
-# RingCentral Phone — Add Your Button (SpicyLamar Integration)
+# RingCentral Phone — Put Spicy Lamar INSIDE the app (and launch it)
+
+> **Updated (v1.0 in-app):** this is now the primary build. Running **`build.bat`** (repo root) calls
+> `apply-patch.ps1`, which unpacks `resources/app.asar`, installs the **full in-app engine**
+> (`spicy-engine/`), repacks, and **launches the patched RingCentral** — so `build.bat` actually opens
+> something. The full feature (🌶 SPICY dialer button + ⚙ menu entry + auto-answer + DTMF + pin)
+> now lives inside RingCentral's own app — no separate `SpicyLamar.exe`, no popup.
+
+Everything below the old files (`inject-spicy-button.js`, `patch.diff`, etc.) is kept for reference and
+as a fallback manual-patch route; the recommended path is `spicy-engine/` + `apply-patch.ps1`.
+See **`spicy-engine/README.md`** for how the in-app modules are wired.
+
+---
 
 This patch adds a **“🌶 Spicy Lamar”** button directly inside the RingCentral Phone dialer UI you showed in `image-1.png` / `image-2.png`.
 
@@ -113,18 +125,22 @@ If you don't want to rebuild `app.asar`, our integrated `SpicyLamar.exe` can **h
 | `patch.diff` | Unified diff you can `git apply` inside `app-src` |
 | `apply-patch.ps1` | One-click PowerShell: unpacks `app.asar`, applies patch, repacks |
 
-## One-click apply (Windows, with your local RingCentral.zip)
+## One-click apply + launch (Windows, with your local RingCentral)
 
 ```powershell
-# Place your RingCentral.zip next to this folder, then:
-.\apply-patch.ps1 -RingCentralZip .\RingCentral.zip -AddButton "🌶 SPICY"
+# Explicit source (zip / unpacked app folder / app.asar):
+.\ringcentral-patch\apply-patch.ps1 -Source .\RingCentral.zip
 
-# The script:
-#  1. Expands RingCentral.zip to .\RingCentral-patched\
-#  2. asar extract resources/app.asar
-#  3. Applies patch.diff + copies inject-spicy-button.js + spicy-button.css
-#  4. asar pack app-src resources/app.asar
-#  5. Leaves you with RingCentral/ with your button inside — single window still, plus our integrated SpicyLamar.exe overlay
+# Or just run it — auto-detects RingCentral installed under %LocalAppData%\RingCentral:
+.\ringcentral-patch\apply-patch.ps1
+# (build.bat at the repo root does the same and opens docs\INAPP_GUIDE.html if nothing is found.)
+
+# What the script does:
+#  1. Locates an app.asar (zip / folder / installed app)
+#  2. asar extract → copies ringcentral-patch/spicy-engine/ in
+#  3. Wires the renderer entry (index.html) + main process hook
+#  4. asar pack (keeps app.asar.bak backup)
+#  5. LAUNCHES the patched RingCentral
 ```
 
 ## After patch — what you get
