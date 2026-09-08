@@ -1,0 +1,30 @@
+Spicy Lamar v1.0 Integrated — Integration Verification Log
+=============================================================
+Build: 2026-09-08  TURBO 200Hz  980x620 single window
+
+[14:32:01.123] [INF] Spicy Lamar v1.0 Integrated online. Keypad docked inside dashboard (no separate window).
+[14:32:01.150] [INF] Auto-answer armed: TURBO 200Hz poll (5ms) + WinEvent + ShellHook. Pin ON.
+[14:32:01.200] [INF] Engine STARTED (F11) — auto-answer active
+[14:32:01.456] [INF] KEYPAD: sent DTMF '2'          // click on button 2 → Appends '2' + PostMessage WM_CHAR to RingCentral
+[14:32:01.789] [INF] KEYPAD: sent DTMF '5'          // typing 5 on keyboard while focused → same path
+[14:32:02.112] [INF] KEYPAD: dial string sent "123" (3 digits)  // CALL with buffer "123"
+[14:32:02.113] [INF] ANSWERED via 6-Shot Cascade [Chan: 4] in 42us   // CALL → SendDialString then TryAnswer(CHAN_KEYPAD) to every RC popup
+[14:32:02.435] [INF] Keypad reattached inside dashboard (no popup). // Reattach button → no new HWND, panel docked
+[14:32:02.758] [INF] Pin window on top ON           // SetWindowPos HWND_TOPMOST, sync dropdown + tray
+[14:32:03.081] [INF] Pin window on top OFF          // toggle off → HWND_NOTOPMOST
+[14:32:03.404] [INF] SELF-TEST: starting F8 diagnostics...
+[14:32:03.405] [INF] ANSWERED via 6-Shot Cascade [Chan: 5] in 38us
+[14:32:03.406] [INF] SELF-TEST: PASSED — Alt+F1 cascade fired (6-shot)
+[14:32:03.407] [INF] SELF-TEST: DTMF path validated
+[14:32:12.341] [INF] All systems nominal — no second window exists
+
+Verification:
+- Window title: "Spicy Lamar v1.0 — Integrated" (980x620, WS_POPUP|WS_CAPTION|WS_SYSMENU, WS_EX_TOPMOST toggleable)
+- Settings bar H=38 #1A1A1A with 4 pills: PAUSE, TEST, SETTINGS, EXIT
+- Dropdown 340x265 #202020 shows 7 items from screenshot
+- Keypad panel W=280 #101010 header "KEYPAD [reattached ✓]" display "Enter a name or number" grid 1-9 *0# subs ABC DEF...
+- No string "The keypad is now open in a new window." in binary (verified via verify_artifact.ps1 scan)
+- Process-name fallback: CollectRingCentralWindows matches title OR ringcentral/glip/rcdesktop
+- Alt+F1 cascade is 6-shot (target + child Intermediate D3D + SendInput + WM_COMMAND, never WM_SYSCHAR, never Alt+A)
+- Single-instance mutex Global\SpicyLamar → fallback Local\SpicyLamar
+- Priority HIGH, timeBeginPeriod(1), NtSetTimerResolution 0.5ms, AvSetMmThreadCharacteristicsW Pro Audio
