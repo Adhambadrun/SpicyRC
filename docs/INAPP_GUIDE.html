@@ -90,14 +90,14 @@
       align-items:center;justify-content:center;color:#fff;font-weight:700">Call</div>
   </div>
   <p class="sub">A 🌶 <b>SPICY</b> button appears in RC's own dialer row, plus a
-  <b>"Spicy Lamar — Auto-Answer [ON]"</b> entry in the ⚙ Settings menu. No popup, no extra window.</p>
+  <b>"Spicy Lamar — Auto-Answer"</b> and <b>"Pin RingCentral on top"</b> entries in the ⚙ Settings menu. No popup, no extra window.</p>
 
   <h2>3 · Features (now in-app)</h2>
   <table>
     <tr><th>Feature</th><th>In-app behaviour</th></tr>
-    <tr><td>Auto-answer</td><td>Detects an incoming call and clicks RC's own Answer control. Toggle via the 🌶 SPICY button or the ⚙ menu.</td></tr>
-    <tr><td>DTMF / dial</td><td>Drives RC's own keypad / number field (send digits from the SPICY flow).</td></tr>
-    <tr><td>Pin on top</td><td><code>spicy-main.js</code> mirrors the old top-most behaviour with <code>setAlwaysOnTop</code>.</td></tr>
+    <tr><td>Auto-answer</td><td>When both an incoming-call surface and Answer control are visible, clicks RingCentral's own Answer control. Toggle via the 🌶 SPICY button or the ⚙ menu.</td></tr>
+    <tr><td>DTMF / dial</td><td>Uses only RingCentral's own visible keypad, dial field, and CALL control.</td></tr>
+    <tr><td>Pin on top</td><td><code>spicy-main.js</code> calls <code>setAlwaysOnTop</code> only for RingCentral's BrowserWindow.</td></tr>
   </table>
 
   <h2>4 · If no 🌶 button appears after first launch</h2>
@@ -109,10 +109,10 @@
   <table>
     <tr><th>Path</th><th>Role</th></tr>
     <tr><td><code>build.bat</code></td><td>Patch + launch RingCentral (in-app). Opens this guide when no RC is found.</td></tr>
-    <tr><td><code>build_standalone.bat</code></td><td>Legacy separate 980×620 demo exe (auto-launches). Optional.</td></tr>
+    <tr><td><code>build_portable.bat</code> / <code>build_standalone.bat</code></td><td>Redirect to <code>build.bat</code> so the supported control path stays inside RingCentral.</td></tr>
     <tr><td><code>ringcentral-patch\apply-patch.ps1</code></td><td>The actual unpack → inject → repack → launch engine.</td></tr>
     <tr><td><code>ringcentral-patch\spicy-engine\spicy-renderer.js</code></td><td>Injects UI + auto-answer inside RC's renderer.</td></tr>
-    <tr><td><code>ringcentral-patch\spicy-engine\spicy-main.js</code> / <code>spicy-preload.js</code></td><td>Main-process pin + bridge (optional).</td></tr>
+    <tr><td><code>ringcentral-patch\spicy-engine\spicy-main.js</code> / <code>spicy-preload.js</code></td><td>RingCentral-window-only pin + narrow settings bridge.</td></tr>
     <tr><td><code>ringcentral-patch\spicy-engine\spicy-config.js</code></td><td>One place to tune DOM selectors for your RC build.</td></tr>
   </table>
 
@@ -122,7 +122,7 @@
       padding:9px 16px;font-weight:700">🌶 SPICY — patch + open RC</span>
   </div>
   <pre><code>build.bat</code></pre>
-  <p class="sub">(Optionally, still want the old standalone demo? Use <code>build_standalone.bat</code>.)</p>
+  <p class="sub">This in-app route uses no global shortcuts, OS-wide input, or separate Spicy Lamar window.</p>
 </div>
 </body>
 </html>

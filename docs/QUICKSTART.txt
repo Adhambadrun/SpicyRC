@@ -1,50 +1,38 @@
-🌶️ SPICY LAMAR v1.0 Integrated — QUICKSTART
-═══════════════════════════════════════════════════════════
+SPICY LAMAR — RINGCENTRAL IN-APP QUICKSTART
+=============================================
 
-WHAT IT DOES:
-One window (980x620) hosts RingCentral Phone inside. No second
-"keypad is now open in a new window" popup — the keypad is docked
-right as a panel. Left shows telemetry + logs. Top settings bar
-drives everything.
+Spicy Lamar controls now live inside RingCentral itself.
 
-TURBO ENGINE (default):
-  * 200Hz poll (5ms) — throttled 100ms poll floor / 50ms storm floor
-  * WindowCache + CollectRingCentralWindows (title OR process name
-    ringcentral/glip/rcdesktop) — fires to every popup
-  * 6-shot Alt+F1 cascade (PostMessage to main+child Intermediate D3D
-    + SendInput + WM_COMMAND, NEVER WM_SYSCHAR or Alt+A)
-  * DTMF: WM_CHAR to main+child + SendInput UNICODE if foreground is RC
-  * MMCSS Pro Audio + 0.5ms NT timer + HIGH priority
+INSTALL (Windows)
+1. Close RingCentral.
+2. Run build.bat in the repository root.
+3. The installer finds RingCentral (or provide -Source to
+   ringcentral-patch\apply-patch.ps1), backs up resources\app.asar,
+   installs the in-app engine, repacks it, and starts RingCentral.
+4. Open the RingCentral dialer.
 
-INSTALL:
-1. Build it: build_portable.bat (C++ TURBO) or build.bat (C#).
-2. Copy "SpicyLamar.exe" anywhere.
-3. Double-click to run. Single window appears. No admin, no UAC.
-4. If SmartScreen warns: More info -> Run anyway, or Unblock.
+CONTROLS INSIDE RINGCENTRAL
+  🌶 SPICY ON/OFF                  next to RingCentral's CALL control
+  Spicy Lamar — Auto-Answer        in RingCentral's Settings menu
+  Pin RingCentral on top            in RingCentral's Settings menu
 
-DASHBOARD (980x620):
-  Top:  🌶 SPICY LAMAR v1.0 — Integrated | My caller ID: (754) 654-0339
-        [⏸ PAUSE] [🧪 TEST] [⚙ SETTINGS ▼] [✕ EXIT]   ← pill buttons
-  Left: STATUS [ACTIVE/PAUSED] | CALLS / UPTIME / LAST | histogram | LOG (10 lines)
-  Right: KEYPAD [reattached ✓] | [ Enter a name or number | C ] | 12 buttons (1 ABC…)
-         [▶ CALL green] [■ END red] | Hint: ⌫ Backspace • Type • Enter=Call
-  Dropdown (⚙): Pin ON (syncs TOPMOST) · Reattach [Docked] · Emergency · RingOut OFF
-                · Incoming rules · Voicemail · Phone settings
+SAFETY BOUNDARY
+  * No standalone Spicy Lamar window or EXE is launched.
+  * No global hotkey, Alt+F1 sequence, SendInput, keyboard hook, or focus
+    change is installed.
+  * Auto-answer clicks only a visible Answer/Accept control on a visible
+    incoming-call surface in RingCentral.
+  * DTMF/call helpers use only RingCentral's own keypad, field, and Call
+    control.
+  * Pin affects only the RingCentral Electron BrowserWindow.
 
-HOTKEYS & KEYS:
-F8  : Self-test (forces Alt+F1 cascade, logs PASSED)
-F9  : Show/Hide dashboard
-F11 : Pause/Start  (also PAUSE pill + tray menu + tooltip)
-F12 : Exit
-Type 0-9*#+ : append + SendDtmf (logs KEYPAD: sent DTMF 'x')
-Enter     : CALL — SendDialString(buffer) + TryAnswer(CHAN_KEYPAD)
-Backspace : delete last digit
-Esc / END : send VK_ESCAPE + clear buffer
-Pin toggle: SetWindowPos TOPMOST ↔ NOTOPMOST
-Reattach  : logs "Keypad reattached inside dashboard (no popup)." (no new HWND)
+IF THE BUTTON IS MISSING
+  Open RingCentral DevTools, look for [SpicyLamar] messages, tune selectors
+  in ringcentral-patch\spicy-engine\spicy-config.js, rerun build.bat, and
+  restart RingCentral.
 
-VERIFY:
-  powershell -ExecutionPolicy Bypass -File build\verify_artifact.ps1
-  → checks PE32+ x64 GUI, icon, version 1.0 Integrated, no popup string
+RESTORE
+  Close RingCentral and restore resources\app.asar.bak over app.asar.
 
-═══════════════════════════════════════════════════════════
+build_portable.bat and build_standalone.bat redirect here intentionally so
+there is no supported path that creates a separate desktop control window.
