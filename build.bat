@@ -13,9 +13,9 @@ echo.
 echo  What this does:
 echo   1. Locates your RingCentral (zip / installed app).
 echo   2. Unpacks resources\app.asar and injects the Spicy engine:
-echo        - a  [Chili] SPICY button in the dialer row
-echo        - a  "Spicy Lamar - Auto-Answer" item in the Settings menu
-echo        - in-app auto-answer + DTMF + Pin-on-top  (no popup, no alt-exe)
+echo        - a  [Chili] SPICY ON/OFF button in the dialer row
+echo        - Auto-Answer + Pin RingCentral on top items in the Settings menu
+echo        - in-app controls only: no popup, alt-exe, global hotkey, or PC-wide input
 echo   3. Repacks app.asar and LAUNCHES the patched RingCentral.
 echo.
 echo ==========================================================
@@ -55,8 +55,8 @@ if "%RC%" NEQ "0" (
 echo.
 echo ==========================================================
 echo  DONE - RingCentral was launched with Spicy Lamar inside it.
-echo  Open the dialer: you should see the [Chili] SPICY button
-echo  and "Spicy Lamar - Auto-Answer [ON]" in the Settings menu.
+echo  Open the dialer: you should see [Chili] SPICY ON/OFF beside Call
+echo  and Auto-Answer + Pin RingCentral on top in Settings.
 echo ==========================================================
 timeout /t 5 >nul 2>&1 || pause
 exit /b 0

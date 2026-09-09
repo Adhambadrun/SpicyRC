@@ -1,24 +1,19 @@
-/* spicy-button.css — chili palette matching SpicyLamar-Integrated */
+/* Styles for controls injected into RingCentral's own renderer only. */
 #spicy-lamar-btn {
-  background: #1A1A1A;
-  color: #FF3300;
+  background: #FF3300;
+  color: #FFFFFF;
   border: 1px solid #303030;
   border-radius: 8px;
   font-family: "Segoe UI", sans-serif;
   font-weight: 700;
   transition: background 120ms, transform 80ms;
 }
-#spicy-lamar-btn:hover { background: #262626; }
-#spicy-lamar-btn:active { background: #FF3300 !important; color: #FFFFFF !important; transform: scale(0.98); }
-#spicy-lamar-menu-item:hover { background: #1A1A1A; }
-#spicy-lamar-menu-item:active { background: #262626; }
-
-/* Ensure the new row doesn't break RingCentral's flex layout (image-2 bottom) */
-.dialer-actions, [class*="dialer"] [class*="actions"] {
-  gap: 12px !important;
+#spicy-lamar-btn:hover { background: #FF5533; }
+#spicy-lamar-btn:active {
+  background: #262626 !important;
+  transform: scale(0.98);
 }
-
-/* Dropdown menu dark theme (matches #202020 in your screenshots) */
-#spicy-lamar-menu-item {
-  font-family: "Segoe UI", sans-serif;
-}
+#spicy-lamar-menu-item:hover,
+#spicy-lamar-pin-menu-item:hover { background: #1A1A1A; }
+#spicy-lamar-menu-item:active,
+#spicy-lamar-pin-menu-item:active { background: #262626; }

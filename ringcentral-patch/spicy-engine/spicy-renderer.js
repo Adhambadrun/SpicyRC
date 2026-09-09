@@ -1,338 +1,466 @@
 /**
- * spicy-renderer.js — Spicy Lamar IN-APP feature (runs inside RingCentral's own renderer)
- * ---------------------------------------------------------------------------------------
- * This is the in-app replacement for the standalone SpicyLamar.exe. It does NOT
- * open a new window and does NOT post Alt+F1 to external windows. Instead it:
+ * Spicy Lamar renderer integration.
  *
- *   1. Injects a "🌶 SPICY" button into RingCentral's own dialer row and a
- *      "🌶 Spicy Lamar — Auto-Answer [ON/OFF]" entry into the ⚙ menu, inside
- *      the existing RC window.
- *   2. Auto-answers incoming calls by DOM-clicking RC's own Answer control
- *      (no separate helper process).
- *   3. Sends DTMF / places calls by driving RC's own keypad / dial field.
- *   4. Bridges to the main process (via window.spicyLamar, installed by
- *      spicy-preload.js) for pin-on-top and a central status line.
- *
- * Load it AFTER React mounts — the script self-injects and retries until the
- * dialer appears (RingCentral lazy-loads it), exactly like the previous
- * inject-spicy-button.js did, but with the full engine instead of a stub.
- *
- * NOTE: DOM selectors are RC-version specific — tune them in spicy-config.js.
- * Verify with the [SpicyLamar] console logs after launching.
+ * This script runs in RingCentral's own renderer and intentionally has a small
+ * safety boundary: it only clicks visible controls in this document. It does
+ * not create windows, register global hotkeys, focus another application, or
+ * operate the keyboard outside RingCentral.
  */
-
 (function () {
   'use strict';
 
-  // Load shared config (works when packed in app.asar next to spicy-engine/).
-  // Falls back to inline defaults so the engine is self-contained even if the
-  // config <script> was not loaded.
-  var cfg = (typeof window !== 'undefined' && window.spicyConfig) ||
-            (typeof module !== 'undefined' && module.require && module.require('./spicy-config.js')) || {
+  // The main process can inject this after every renderer navigation. Do not
+  // create a second timer/observer when both the main injector and index.html
+  // load it.
+  if (window.__spicyLamarRendererLoaded) return;
+  window.__spicyLamarRendererLoaded = true;
+
+  var fallbackConfig = {
     autoAnswer: { enabledOnStartup: true, pollIntervalMs: 250, answerFiredCooldownMs: 2000, dtmfDigitDelayMs: 80 },
     pinOnTopDefault: true,
     answerSelectors: [
-      'button[aria-label="Answer"]','button[aria-label*="Accept"]','button[class*="answer"]',
-      '[data-testid*="answer"]','[class*="accept-call"] button',
-      '[class*="incoming"] button[class*="answer"], [class*="incoming"] button[class*="accept"]'
+      'button[aria-label="Answer"]', 'button[aria-label="Accept call"]',
+      '[data-testid="answer-call"]', '[class*="incoming"] button[class*="answer"]'
     ],
     incomingCallSelectors: [
-      '[class*="incoming-call"]','[class*="call-card"]','[aria-label*="Incoming call"]','[class*="answer-queue"]'
+      '[data-testid*="incoming-call"]', '[aria-label*="Incoming call"]', '[class*="incoming-call"]'
     ],
     dialFieldSelectors: [
-      'input[placeholder*="Enter a name or number"]','input[placeholder*="Enter name"]','input[type="tel"]','input[placeholder*="number"]'
+      'input[placeholder*="Enter a name or number"]', 'input[type="tel"]', 'input[inputmode="tel"]'
     ],
     callButtonSelectors: [
-      'button[aria-label*="Call"]','button[class*="call-btn"], button[class*="callButton"], button[class*="call"]'
+      'button[aria-label="Call"]', '[data-testid="call-button"]', 'button[class*="callButton"]', 'button[class*="call-btn"]'
     ],
-    dtmfPadSelectors: ['[class*="keypad"] button, [class*="dtmf"] button, [class*="dialer"] button'],
-    menuItemTextAnchor: 'Phone settings',
-    palette: { chili: '#FF3300', neon: '#00FF66', panel: '#1A1A1A', border: '#303030', text: '#E6E6E6' },
-    log: function (m) { try { console.log('[SpicyLamar] ' + m); } catch (e) {} },
-    warn: function (m) { try { console.warn('[SpicyLamar] ' + m); } catch (e) {} }
+    dtmfPadSelectors: ['[data-testid*="dtmf"]', '[class*="dtmf"]', '[class*="keypad"]', '[class*="dialpad"]'],
+    menuItemTextAnchor: 'Phone settings'
   };
 
-  function log(m)   { try { console.log('[SpicyLamar] ' + m); } catch (e) {} }
-  function warn(m)  { try { console.warn('[SpicyLamar] ' + m); } catch (e) {} }
-
-  var BTN_ID  = 'spicy-lamar-btn';
+  var cfg = window.spicyConfig || fallbackConfig;
+  var BUTTON_ID = 'spicy-lamar-btn';
   var MENU_ID = 'spicy-lamar-menu-item';
-  var STATE   = {
-    autoAnswer: cfg && cfg.autoAnswer ? cfg.autoAnswer.enabledOnStartup : true,
-    pinned: cfg ? !!cfg.pinOnTopDefault : true,
+  var PIN_MENU_ID = 'spicy-lamar-pin-menu-item';
+  var STORAGE_KEY = 'spicy-lamar.state.v2';
+  var state = {
+    autoAnswer: cfg.autoAnswer ? cfg.autoAnswer.enabledOnStartup !== false : true,
+    pinned: cfg.pinOnTopDefault !== false,
     lastAnswerAt: 0
   };
 
-  // ------------------------------------------------------------------ helpers
+  function log(message) {
+    try { console.log('[SpicyLamar] ' + message); } catch (ignore) {}
+  }
 
-  function vis(el) {
-    if (!el || el.nodeType !== 1) return false;
-    var s = window.getComputedStyle(el);
-    return s && s.display !== 'none' && s.visibility !== 'hidden' && el.offsetParent !== null;
+  function warn(message) {
+    try { console.warn('[SpicyLamar] ' + message); } catch (ignore) {}
+  }
+
+  function bridge() {
+    try { return window.spicyLamar || null; } catch (ignore) { return null; }
+  }
+
+  function loadLocalState() {
+    try {
+      var saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}');
+      if (typeof saved.autoAnswer === 'boolean') state.autoAnswer = saved.autoAnswer;
+      if (typeof saved.pinned === 'boolean') state.pinned = saved.pinned;
+    } catch (ignore) {}
+
+    // The preload bridge is optional. If it is present, the RingCentral main
+    // process is authoritative for pin state and persisted settings.
+    try {
+      var api = bridge();
+      if (api && typeof api.getState === 'function') {
+        var fromMain = api.getState();
+        if (fromMain && typeof fromMain.autoAnswer === 'boolean') state.autoAnswer = fromMain.autoAnswer;
+        if (fromMain && typeof fromMain.pinned === 'boolean') state.pinned = fromMain.pinned;
+      }
+    } catch (ignore) {}
+  }
+
+  function saveLocalState() {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        autoAnswer: state.autoAnswer,
+        pinned: state.pinned
+      }));
+    } catch (ignore) {}
+  }
+
+  function isVisible(element) {
+    if (!element || element.nodeType !== 1 || element.disabled) return false;
+    var style = window.getComputedStyle(element);
+    if (!style || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    var rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   }
 
   function firstVisible(selectors, scope) {
     var root = scope || document;
+    if (!selectors) return null;
     for (var i = 0; i < selectors.length; i++) {
-      var s = selectors[i];
       var nodes;
-      try { nodes = root.querySelectorAll(s); } catch (e) { nodes = []; }
+      try { nodes = root.querySelectorAll(selectors[i]); } catch (ignore) { nodes = []; }
       for (var j = 0; j < nodes.length; j++) {
-        if (vis(nodes[j])) return nodes[j];
+        if (isVisible(nodes[j])) return nodes[j];
       }
     }
     return null;
   }
 
-  function textFind(needle, scope) {
+  function textElement(needle, scope) {
     var root = scope || document;
+    if (!root || !document.createTreeWalker) return null;
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    var n;
-    while ((n = walker.nextNode())) {
-      var t = (n.textContent || '').trim();
-      if (t.indexOf(needle) !== -1) return n.parentElement;
+    var node;
+    while ((node = walker.nextNode())) {
+      if ((node.textContent || '').trim().indexOf(needle) !== -1) return node.parentElement;
     }
     return null;
   }
 
-  function renderStatus() {
-    var pill = document.getElementById('spicy-status');
-    if (pill) {
-      pill.textContent = STATE.autoAnswer ? '[ON]' : '[OFF]';
-      pill.style.color = STATE.autoAnswer ? '#00FF66' : '#FF3300';
-    }
-    var btn = document.getElementById(BTN_ID);
-    if (btn) {
-      btn.style.background = STATE.autoAnswer ? '#FF3300' : '#1A1A1A';
-      btn.style.color = STATE.autoAnswer ? '#FFFFFF' : '#FF3300';
-      btn.textContent = '🌶 ' + (STATE.autoAnswer ? 'SPICY ON' : 'SPICY OFF');
-    }
+  function buttonFrom(element) {
+    if (!element) return null;
+    if (element.tagName === 'BUTTON') return element;
+    try { return element.querySelector('button'); } catch (ignore) { return null; }
   }
 
-  function flash(btn) {
-    if (!btn) return;
-    var old = btn.style.background;
-    btn.style.background = '#00B450';
-    setTimeout(function () { btn.style.background = old; renderStatus(); }, 200);
-  }
-
-  function notifyMain(eventName, payload) {
+  // React-controlled inputs ignore a plain assignment to element.value. Use
+  // the native setter then dispatch the same input/change notifications that
+  // RingCentral's own field receives. These events remain in this RC document.
+  function setControlledValue(input, value) {
+    if (!input) return false;
     try {
-      if (window.spicyLamar && window.spicyLamar.notify) window.spicyLamar.notify(eventName, payload || {});
-    } catch (e) {}
+      var proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      var descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (descriptor && descriptor.set) descriptor.set.call(input, value);
+      else input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    } catch (error) {
+      warn('could not update RingCentral dial field: ' + error.message);
+      return false;
+    }
   }
 
-  // ----------------------------------------------------------------- dtmf/call
+  function controlLabel(element) {
+    return ((element.getAttribute && (element.getAttribute('aria-label') || element.getAttribute('title'))) || element.textContent || '')
+      .replace(/\s+/g, ' ').trim();
+  }
 
-  function pressDigitOnPad(digit) {
-    var pad = firstVisible(cfg.dtmfPadSelectors);
-    if (!pad) return null;
-    // pad is the container element already matched; search its buttons for the digit text
-    var btns = pad.querySelectorAll('button');
-    for (var i = 0; i < btns.length; i++) {
-      if ((btns[i].textContent || '').trim() === String(digit)) { btns[i].click(); return true; }
+  function findDtmfButton(digit) {
+    var containers = [];
+    var selectors = cfg.dtmfPadSelectors || [];
+    for (var i = 0; i < selectors.length; i++) {
+      var found;
+      try { found = document.querySelectorAll(selectors[i]); } catch (ignore) { found = []; }
+      for (var j = 0; j < found.length; j++) {
+        if (isVisible(found[j])) containers.push(found[j]);
+      }
+    }
+
+    for (var a = 0; a < containers.length; a++) {
+      var root = containers[a];
+      var candidates = root.tagName === 'BUTTON' ? [root] : root.querySelectorAll('button, [role="button"]');
+      for (var b = 0; b < candidates.length; b++) {
+        var label = controlLabel(candidates[b]);
+        // "2\nABC" is an RC keypad key; match its first token only.
+        if (label === digit || label.split(' ')[0] === digit) return candidates[b];
+      }
     }
     return null;
   }
 
   function sendDtmf(digit) {
-    digit = String(digit);
-    if (!/^[0-9*#+]$/.test(digit)) { warn('invalid DTMF ' + digit); return false; }
-    // Prefer the real RC on-call DTMF pad; fall back to typing into the dial field.
-    var padHit = pressDigitOnPad(digit);
-    if (padHit) { log('DTMF \'' + digit + '\' sent via on-call pad'); notifyMain('dtmf', { d: digit }); return true; }
-    var field = firstVisible(cfg.dialFieldSelectors);
-    if (field) {
-      field.value = (field.value || '') + digit;
-      field.dispatchEvent(new Event('input', { bubbles: true }));
-      field.dispatchEvent(new KeyboardEvent('keydown', { key: digit, bubbles: true }));
-      field.focus();
-      log('DTMF \'' + digit + '\' typed into dial field');
-      notifyMain('dtmf', { d: digit });
+    digit = String(digit || '');
+    if (!/^[0-9*#+]$/.test(digit)) {
+      warn('refused invalid DTMF character: ' + digit);
+      return false;
+    }
+
+    var key = findDtmfButton(digit);
+    if (key) {
+      key.click();
+      log('DTMF ' + digit + ' sent through RingCentral keypad');
       return true;
     }
-    warn('no DTMF pad or dial field found for digit ' + digit);
+
+    var field = firstVisible(cfg.dialFieldSelectors);
+    if (field && setControlledValue(field, String(field.value || '') + digit)) {
+      log('DTMF ' + digit + ' sent through RingCentral dial field');
+      return true;
+    }
+
+    warn('no RingCentral keypad or dial field available for DTMF ' + digit);
     return false;
   }
 
   function placeCall(digits) {
-    var s = String(digits);
-    log('placing call with "' + s + '"');
-    if (!s) return false;
-    var field = firstVisible(cfg.dialFieldSelectors);
-    if (field) {
-      field.value = s;
-      field.dispatchEvent(new Event('input', { bubbles: true }));
+    var value = String(digits || '');
+    if (!value || !/^[0-9*#+]+$/.test(value)) {
+      warn('refused invalid dial string');
+      return false;
     }
-    var callBtn = firstVisible(cfg.callButtonSelectors) ||
-                  textFind('Call', document) ||
-                  textFind('Noteson', document); // Noteson row hosts the green call circle
-    if (callBtn && callBtn.tagName === 'BUTTON') callBtn.click();
-    else if (callBtn) { var b = callBtn.querySelector('button'); if (b) b.click(); }
-    log('CALL button pressed');
+
+    var field = firstVisible(cfg.dialFieldSelectors);
+    if (!field || !setControlledValue(field, value)) {
+      warn('RingCentral dial field is not available');
+      return false;
+    }
+
+    var callControl = firstVisible(cfg.callButtonSelectors);
+    var callButton = buttonFrom(callControl);
+    if (!callButton || !isVisible(callButton)) {
+      warn('RingCentral CALL control is not available');
+      return false;
+    }
+    callButton.click();
+    log('CALL pressed in RingCentral for ' + value);
     return true;
   }
-
-  // ---------------------------------------------------------------- auto-answer
 
   function autoAnswerTick() {
-    if (!STATE.autoAnswer) return;
+    if (!state.autoAnswer) return;
     var now = Date.now();
-    if (now - STATE.lastAnswerAt < cfg.autoAnswer.answerFiredCooldownMs) return;
+    var autoCfg = cfg.autoAnswer || fallbackConfig.autoAnswer;
+    if (now - state.lastAnswerAt < autoCfg.answerFiredCooldownMs) return;
 
-    // Only act when an incoming call surface is actually showing.
     var incoming = firstVisible(cfg.incomingCallSelectors);
     var answer = firstVisible(cfg.answerSelectors);
-    if (!incoming && !answer) return;
-    if (!answer) return; // incoming visible but no clickable answer yet
+    // Never click a generic button merely because its class happens to contain
+    // "answer". An incoming surface must be visible in the RC renderer.
+    if (!incoming || !answer) return;
 
-    answer.click();
-    STATE.lastAnswerAt = now;
-    log('ANSWERED incoming call (in-app click)');
-    notifyMain('answered', { at: now });
-    flash(document.getElementById(BTN_ID));
+    var answerButton = buttonFrom(answer) || answer;
+    if (!isVisible(answerButton)) return;
+    answerButton.click();
+    state.lastAnswerAt = now;
+    log('answered incoming RingCentral call using its own Answer control');
+    flash(document.getElementById(BUTTON_ID));
   }
 
-  // ------------------------------------------------------------------ injection
-
-  function injectKeypadButton() {
-    if (document.getElementById(BTN_ID)) return true;
-
-    var callBtn = firstVisible(cfg.callButtonSelectors) ||
-                  textFind('Noteson', document);
-    var anchor = null;
-    if (callBtn) anchor = callBtn.parentElement || callBtn;
-    else {
-      var field = firstVisible(cfg.dialFieldSelectors);
-      if (field) anchor = field.parentElement;
-    }
-    if (!anchor) { log('anchor not found for SPICY button'); return false; }
-
-    var btn = document.createElement('button');
-    btn.id = BTN_ID;
-    btn.type = 'button';
-    btn.title = 'Spicy Lamar — toggle auto-answer (left-click toggles)';
-    btn.textContent = '🌶 SPICY';
-    btn.style.cssText = [
-      'background:#FF3300', 'color:#FFFFFF', 'border:1px solid #303030',
-      'border-radius:8px', 'padding:10px 16px', 'font-family:"Segoe UI",sans-serif',
-      'font-weight:700', 'font-size:13px', 'cursor:pointer',
-      'display:inline-flex', 'align-items:center', 'justify-content:center',
-      'min-width:96px', 'margin:0 8px', 'box-shadow:0 0 6px rgba(255,51,0,.35)'
-    ].join(';');
-    btn.addEventListener('click', function (e) {
-      e.preventDefault(); e.stopPropagation();
-      STATE.autoAnswer = !STATE.autoAnswer;
-      log('Auto-answer ' + (STATE.autoAnswer ? 'ON' : 'OFF') + ' (clicked SPICY in dialer)');
-      notifyMain('toggle', { on: STATE.autoAnswer });
-      renderStatus();
-    });
-    btn.addEventListener('mouseenter', function () { btn.style.background = '#FF5533'; });
-    btn.addEventListener('mouseleave', renderStatus);
-
-    if (anchor.children && anchor.children.length >= 2) {
-      // insert between Noteson and the green CALL button
-      anchor.insertBefore(btn, anchor.children[1]);
-    } else {
-      anchor.appendChild(btn);
-    }
-    log('SPICY button injected into dialer');
-    return true;
+  function setAutoAnswer(enabled, source) {
+    state.autoAnswer = !!enabled;
+    saveLocalState();
+    try {
+      var api = bridge();
+      if (api && typeof api.setAutoAnswer === 'function') api.setAutoAnswer(state.autoAnswer);
+    } catch (ignore) {}
+    log('auto-answer ' + (state.autoAnswer ? 'ON' : 'OFF') + (source ? ' (' + source + ')' : ''));
+    renderState();
   }
 
-  function injectMenuItem() {
-    if (document.getElementById(MENU_ID)) return true;
-
-    var anchor = textFind(cfg.menuItemTextAnchor || 'Phone settings', document);
-    var menuRoot = anchor;
-    if (menuRoot) {
-      for (var i = 0; i < 6 && menuRoot; i++) {
-        if (menuRoot.parentElement && (menuRoot.parentElement.getAttribute('role') === 'menu' ||
-            menuRoot.parentElement.tagName === 'UL' || menuRoot.parentElement.querySelectorAll)) {
-          var m = menuRoot.parentElement.getAttribute('role');
-          if (m === 'menu' || menuRoot.parentElement.tagName === 'UL') { menuRoot = menuRoot.parentElement; break; }
-        }
-        menuRoot = menuRoot.parentElement;
+  function setPinned(enabled) {
+    state.pinned = !!enabled;
+    saveLocalState();
+    try {
+      var api = bridge();
+      if (api && typeof api.setPinned === 'function') {
+        api.setPinned(state.pinned);
+      } else {
+        warn('pin bridge unavailable; no operating-system window was changed');
       }
+    } catch (error) {
+      warn('could not update RingCentral pin state: ' + error.message);
     }
-    if (!menuRoot) { log('menu not visible yet (anchor text missing)'); return false; }
+    renderState();
+  }
 
+  function flash(button) {
+    if (!button) return;
+    var old = button.style.background;
+    button.style.background = '#00B450';
+    setTimeout(function () {
+      button.style.background = old;
+      renderState();
+    }, 180);
+  }
+
+  function renderState() {
+    var button = document.getElementById(BUTTON_ID);
+    if (button) {
+      button.textContent = '🌶 ' + (state.autoAnswer ? 'SPICY ON' : 'SPICY OFF');
+      button.style.background = state.autoAnswer ? '#FF3300' : '#1A1A1A';
+      button.style.color = state.autoAnswer ? '#FFFFFF' : '#FF3300';
+      button.setAttribute('aria-pressed', state.autoAnswer ? 'true' : 'false');
+    }
+    var status = document.getElementById('spicy-status');
+    if (status) {
+      status.textContent = state.autoAnswer ? '[ON]' : '[OFF]';
+      status.style.color = state.autoAnswer ? '#00FF66' : '#FF3300';
+    }
+    var pinStatus = document.getElementById('spicy-pin-status');
+    if (pinStatus) {
+      pinStatus.textContent = state.pinned ? '[ON]' : '[OFF]';
+      pinStatus.style.color = state.pinned ? '#00FF66' : '#FF3300';
+    }
+  }
+
+  function injectedMenuItem(id, label, statusId, onClick) {
     var item = document.createElement('div');
-    item.id = MENU_ID;
+    item.id = id;
     item.setAttribute('role', 'menuitem');
-    item.style.cssText = 'padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;' +
-      'border-top:1px solid #303030;margin-top:8px;font-family:"Segoe UI",sans-serif;font-size:13px;' +
-      'color:#FF3300;user-select:none;';
-    item.innerHTML = '<span>🌶</span><span style="flex:1">Spicy Lamar — Auto-Answer</span>' +
-      '<span id="spicy-status" style="margin-left:auto;color:#00FF66;font-size:12px;">[ON]</span>';
-    item.addEventListener('click', function () {
-      STATE.autoAnswer = !STATE.autoAnswer;
-      log('Auto-answer ' + (STATE.autoAnswer ? 'ON' : 'OFF') + ' (menu)');
-      notifyMain('toggle', { on: STATE.autoAnswer });
-      renderStatus();
+    item.setAttribute('tabindex', '0');
+    item.style.cssText = [
+      'padding:10px 16px', 'cursor:pointer', 'display:flex', 'align-items:center', 'gap:8px',
+      'border-top:1px solid #303030', 'font-family:"Segoe UI",sans-serif', 'font-size:13px',
+      'color:#FF3300', 'user-select:none'
+    ].join(';');
+    item.innerHTML = '<span>🌶</span><span style="flex:1">' + label + '</span>' +
+      '<span id="' + statusId + '" style="margin-left:auto;font-size:12px">[ON]</span>';
+    item.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      onClick();
+    });
+    item.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        onClick();
+      }
     });
     item.addEventListener('mouseenter', function () { item.style.background = '#1A1A1A'; });
     item.addEventListener('mouseleave', function () { item.style.background = 'transparent'; });
+    return item;
+  }
 
-    var phoneItem = textFind('Phone settings', menuRoot);
-    if (phoneItem && phoneItem.parentElement) phoneItem.parentElement.insertBefore(item, phoneItem.nextSibling);
-    else menuRoot.appendChild(item);
-    log('SPICY menu item injected');
+  function menuRootFrom(anchor) {
+    if (!anchor) return null;
+    var direct = anchor.closest && anchor.closest('[role="menu"], ul');
+    if (direct) return direct;
+
+    // Some RC versions use divs without ARIA roles. Use the first parent with
+    // several visible button/menu-item siblings, rather than appending to body.
+    var node = anchor;
+    for (var i = 0; i < 7 && node; i++, node = node.parentElement) {
+      var siblingControls = node.querySelectorAll && node.querySelectorAll('[role="menuitem"], button, [role="button"]');
+      if (siblingControls && siblingControls.length >= 3) return node;
+    }
+    return anchor.parentElement || null;
+  }
+
+  function directMenuChild(root, anchor) {
+    var child = anchor;
+    while (child && child.parentElement && child.parentElement !== root) child = child.parentElement;
+    return child || anchor;
+  }
+
+  function injectMenuItems() {
+    var existingAuto = document.getElementById(MENU_ID);
+    var existingPin = document.getElementById(PIN_MENU_ID);
+    if (existingAuto && existingPin) return true;
+
+    var anchor = textElement(cfg.menuItemTextAnchor || 'Phone settings');
+    var root = menuRootFrom(anchor);
+    if (!anchor || !root || root === document.body || root === document.documentElement) return false;
+
+    var reference = directMenuChild(root, anchor);
+    if (!existingAuto) {
+      var autoItem = injectedMenuItem(MENU_ID, 'Spicy Lamar — Auto-Answer', 'spicy-status', function () {
+        setAutoAnswer(!state.autoAnswer, 'RingCentral menu');
+      });
+      reference.insertAdjacentElement('afterend', autoItem);
+      reference = autoItem;
+      log('Auto-Answer control inserted in RingCentral menu');
+    }
+    if (!existingPin) {
+      var pinItem = injectedMenuItem(PIN_MENU_ID, 'Pin RingCentral on top', 'spicy-pin-status', function () {
+        setPinned(!state.pinned);
+      });
+      reference.insertAdjacentElement('afterend', pinItem);
+      log('Pin control inserted in RingCentral menu');
+    }
+    renderState();
     return true;
   }
 
-  function tryInject() {
-    var a = injectKeypadButton();
-    var b = injectMenuItem();
-    return a || b;
+  function injectDialerButton() {
+    if (document.getElementById(BUTTON_ID)) return true;
+
+    var callControl = firstVisible(cfg.callButtonSelectors);
+    var callButton = buttonFrom(callControl);
+    if (!callButton || !callButton.parentElement) return false;
+
+    var button = document.createElement('button');
+    button.id = BUTTON_ID;
+    button.type = 'button';
+    button.title = 'Toggle RingCentral in-app auto-answer';
+    button.setAttribute('aria-label', 'Toggle Spicy Lamar auto-answer');
+    button.style.cssText = [
+      'background:#FF3300', 'color:#FFFFFF', 'border:1px solid #303030',
+      'border-radius:8px', 'padding:10px 16px', 'font-family:"Segoe UI",sans-serif',
+      'font-weight:700', 'font-size:13px', 'cursor:pointer', 'display:inline-flex',
+      'align-items:center', 'justify-content:center', 'min-width:104px', 'margin:0 8px',
+      'box-shadow:0 0 6px rgba(255,51,0,.35)'
+    ].join(';');
+    button.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      setAutoAnswer(!state.autoAnswer, 'RingCentral dialer');
+    });
+    button.addEventListener('mouseenter', function () {
+      if (state.autoAnswer) button.style.background = '#FF5533';
+      else button.style.background = '#262626';
+    });
+    button.addEventListener('mouseleave', renderState);
+
+    // The button is an immediate sibling of RC's call control, so it remains
+    // in the dialer action row and cannot be placed in another application UI.
+    callButton.parentElement.insertBefore(button, callButton);
+    renderState();
+    log('SPICY control inserted in RingCentral dialer');
+    return true;
   }
 
-  // --------------------------------------------------------------- status badge
-
-  function ensureStatusBadge() {
-    // A small floating status pill in the corner of RC so the user can always
-    // see whether Spicy Lamar is armed, even when the dialer is closed.
-    if (document.getElementById('spicy-status-float')) return;
-    if (!STATE.autoAnswer) return;
-    var el = document.createElement('div');
-    el.id = 'spicy-status-float';
-    el.textContent = '🌶 SPICY LAMAR';
-    el.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:6px 12px;' +
-      'background:rgba(26,26,26,.92);color:#00FF66;border:1px solid #303030;border-radius:16px;' +
-      'font:700 11px "Segoe UI",sans-serif;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.4);';
-    document.body.appendChild(el);
+  function inject() {
+    var dialer = injectDialerButton();
+    var menu = injectMenuItems();
+    return dialer || menu;
   }
 
-  // ------------------------------------------------------------------- boot
-
-  function boot() {
-    tryInject();
-    ensureStatusBadge();
-    renderStatus();
+  function installBridgeSubscription() {
+    try {
+      var api = bridge();
+      if (!api || typeof api.onState !== 'function') return;
+      api.onState(function (next) {
+        if (!next) return;
+        if (typeof next.autoAnswer === 'boolean') state.autoAnswer = next.autoAnswer;
+        if (typeof next.pinned === 'boolean') state.pinned = next.pinned;
+        saveLocalState();
+        renderState();
+      });
+    } catch (ignore) {}
   }
 
-  // Poll every 500ms for the dialer (RC lazy-loads), and on each tick run
-  // auto-answer so we never miss an incoming call.
-  var attempts = 0;
-  var injectTimer = setInterval(function () {
-    attempts++;
-    boot();
-    if (tryInject() && attempts > 4) clearInterval(injectTimer);
-    if (attempts > 120) clearInterval(injectTimer); // 60s hard cap on injection retries
-  }, 500);
+  loadLocalState();
+  installBridgeSubscription();
+  inject();
 
-  // Keep auto-answer running on a fast schedule independent of injection.
-  setInterval(autoAnswerTick, (cfg && cfg.autoAnswer && cfg.autoAnswer.pollIntervalMs) || 250);
-
-  // Mutation observer: inject as soon as the menu/dialer mounts.
+  // RingCentral lazily mounts both the dialer and the settings menu. Observe
+  // only this renderer document; no system-wide listener is installed.
   try {
-    var obs = new MutationObserver(function () { boot(); });
-    obs.observe(document.documentElement, { childList: true, subtree: true });
-  } catch (e) {}
+    var pending = false;
+    var observer = new MutationObserver(function () {
+      if (pending) return;
+      pending = true;
+      setTimeout(function () { pending = false; inject(); }, 0);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (ignore) {}
 
-  // Manual re-inject hook for DevTools: window.__spicyInject()
-  window.__spicyInject = function () { boot(); return tryInject(); };
-  window.__spicySet = function (k, v) { if (k === 'autoAnswer') STATE.autoAnswer = !!v; renderStatus(); return STATE; };
+  var interval = (cfg.autoAnswer && cfg.autoAnswer.pollIntervalMs) || 250;
+  window.setInterval(autoAnswerTick, interval);
 
-  log('in-app engine loaded — will auto-answer + inject UI once the dialer mounts');
+  // Deliberately scoped diagnostic helpers. They act only on controls found in
+  // this RingCentral document and are useful when tuning selectors in DevTools.
+  window.__spicyInject = function () { return inject(); };
+  window.__spicySet = function (key, value) {
+    if (key === 'autoAnswer') setAutoAnswer(!!value, 'DevTools');
+    if (key === 'pinned') setPinned(!!value);
+    return { autoAnswer: state.autoAnswer, pinned: state.pinned };
+  };
+  window.__spicySendDtmf = sendDtmf;
+  window.__spicyPlaceCall = placeCall;
+
+  log('in-app renderer loaded: controls are scoped to this RingCentral window');
 })();

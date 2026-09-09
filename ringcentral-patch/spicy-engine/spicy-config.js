@@ -1,23 +1,10 @@
 /**
- * spicy-config.js — Spicy Lamar in-app engine configuration
- * -----------------------------------------------------------
- * This is the ONE place to tune selectors / behavior for the RingCentral
- * build that is installed on YOUR machine.
+ * Spicy Lamar configuration for the RingCentral renderer.
  *
- * RingCentral is a proprietary Electron app; its DOM classes change between
- * versions. The selectors below are best-effort defaults based on the dialer
- * screens you provided (search text "Enter a name or number", green CALL
- * button, "Reattach keypad" menu). If your RC version differs, open DevTools
- * (Ctrl+Shift+I on the dialer window) and update the selectors here — the
- * engine logs what it finds with a [SpicyLamar] prefix so you can tune it.
- *
- * Because the actual app.asar was not present in this repo (the original
- * RingCentral.zip was a Git-LFS pointer with no object), these cannot be
- * auto-verified here — they are meant to be confirmed once the real app is
- * patched and launched.
+ * These selectors intentionally target controls that already belong to the
+ * RingCentral window. The engine never installs a system-wide keyboard hook,
+ * sends global input, or opens another window.
  */
-
-// UMD so this file works in both Electron main and renderer contexts.
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory();
   else root.spicyConfig = factory();
@@ -25,62 +12,65 @@
   'use strict';
 
   return {
-    // Auto-answer master behaviour.
     autoAnswer: {
-      enabledOnStartup: true,      // Spicy Lamar defaults to ON (matches "Pin ON / Auto-answer active")
-      pollIntervalMs: 250,         // how often we look for an incoming call surface
-      answerFiredCooldownMs: 2000, // don't click "Answer" again within this window
-      dtmfDigitDelayMs: 80         // pause between dialed digits so RC registers each one
+      enabledOnStartup: true,
+      pollIntervalMs: 250,
+      answerFiredCooldownMs: 2000,
+      dtmfDigitDelayMs: 80
     },
 
-    // Window pin-on-top default (matches the dashboard "Pin window on top [ON]").
+    // This is applied only to the RingCentral BrowserWindow that hosts the
+    // patched renderer. It never changes another application window.
     pinOnTopDefault: true,
 
-    // Where to find the green Answer / Accept control when a call comes in.
-    // The engine clicks the first element that matches ANY of these, in order.
+    // Incoming-call controls. Keep these specific: the renderer will only
+    // click a visible Answer/Accept button when an incoming surface is visible.
     answerSelectors: [
       'button[aria-label="Answer"]',
-      'button[aria-label*="Accept"]',
-      'button[class*="answer"]',
-      '[data-testid*="answer"]',
-      '[class*="accept-call"] button',
-      '[class*="incoming"] button[class*="answer"], [class*="incoming"] button[class*="accept"]'
+      'button[aria-label="Accept call"]',
+      'button[aria-label*="Answer call"]',
+      '[data-testid="answer-call"]',
+      '[data-testid*="answer"] button',
+      '[data-test-id*="answer"] button',
+      '[class*="incoming"] button[class*="answer"]',
+      '[class*="incoming"] button[class*="accept"]'
     ],
-
-    // The "an incoming call is showing right now" hint element(s). Only when
-    // one of these is visible do we attempt auto-answer.
     incomingCallSelectors: [
-      '[class*="incoming-call"]',
-      '[class*="call-card"]',
+      '[data-testid*="incoming-call"]',
+      '[data-test-id*="incoming-call"]',
       '[aria-label*="Incoming call"]',
-      '[class*="answer-queue"]'
+      '[class*="incoming-call"]',
+      '[class*="incomingCall"]',
+      '[class*="call-incoming"]'
     ],
 
-    // Outbound/dialer field used for DTMF typing fallback.
     dialFieldSelectors: [
       'input[placeholder*="Enter a name or number"]',
       'input[placeholder*="Enter name"]',
       'input[type="tel"]',
-      'input[placeholder*="number"]'
+      'input[inputmode="tel"]'
     ],
-
-    // The green CALL button (used only for a "soft" answer fallback / to make an outbound call).
     callButtonSelectors: [
-      'button[aria-label*="Call"]',
-      'button[class*="call-btn"], button[class*="callButton"], button[class*="call"]'
+      'button[aria-label="Call"]',
+      'button[aria-label*="Make a call"]',
+      '[data-testid="call-button"]',
+      '[data-test-id="call-button"]',
+      'button[class*="callButton"]',
+      'button[class*="call-btn"]'
     ],
 
-    // DTMF pad that appears during an active call. Each digit key is matched
-    // by its text content ("1","2",…,"#","*","+"). If none is found, digits
-    // are typed into the dial field instead.
+    // A selector may resolve to either the keypad container or one of its
+    // keys. The renderer handles both shapes and clicks only the RC key whose
+    // visible label exactly matches the requested DTMF digit.
     dtmfPadSelectors: [
-      '[class*="keypad"] button, [class*="dtmf"] button, [class*="dialer"] button'
+      '[data-testid*="dtmf"]',
+      '[data-test-id*="dtmf"]',
+      '[class*="dtmf"]',
+      '[class*="keypad"]',
+      '[class*="dialpad"]'
     ],
 
-    // Menu anchor used by the renderer to inject the Spicy menu item.
     menuItemTextAnchor: 'Phone settings',
-
-    // UI chrome colours — reuse the Spicy palette.
     palette: {
       chili: '#FF3300',
       neon: '#00FF66',
@@ -89,13 +79,11 @@
       text: '#E6E6E6'
     },
 
-    // Logging helper available everywhere in this engine (does not depend on
-    // RingCentral internals).
-    log: function (msg) {
-      try { console.log('[SpicyLamar] ' + msg); } catch (e) {}
+    log: function (message) {
+      try { console.log('[SpicyLamar] ' + message); } catch (ignore) {}
     },
-    warn: function (msg) {
-      try { console.warn('[SpicyLamar] ' + msg); } catch (e) {}
+    warn: function (message) {
+      try { console.warn('[SpicyLamar] ' + message); } catch (ignore) {}
     }
   };
 });

@@ -1,18 +1,16 @@
 @echo off
 setlocal EnableExtensions
 chcp 65001 >nul
-title SpicyLamar v1.0 Integrated - Portable One-File Build
+title Spicy Lamar - RingCentral In-App Installer
 
 echo ==========================================================
-echo  SPICY LAMAR v1.0 Integrated - PORTABLE ONE-FILE BUILD
-echo  Single window 980x620 | TURBO 200Hz | Keypad docked inside
+echo  SPICY LAMAR - RINGCENTRAL IN-APP INSTALLER
 echo ==========================================================
 echo.
-
-call "%~dp0build\build.bat"
-if errorlevel 1 exit /b %errorlevel%
-
+echo  The old portable EXE created a separate desktop window and is
+echo no longer a supported control path. Redirecting to the in-app
+echo installer so every Spicy Lamar control remains inside RingCentral.
 echo.
-echo Packaging portable zip...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build\package_portable.ps1"
+
+call "%~dp0build.bat"
 exit /b %errorlevel%

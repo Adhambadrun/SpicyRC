@@ -1,158 +1,104 @@
-# 🌶️ SPICY LAMAR v1.0 Integrated
+# 🌶️ Spicy Lamar — RingCentral in-app integration
 
-## Overview
-**ONE window, ONE exe — portable.** SpicyLamar and RingCentral Phone are merged into a **single 980×620 window**: settings bar on top, telemetry left, **keypad docked right** (no separate popup).
+Spicy Lamar is installed **inside RingCentral Phone's own Electron app**. It adds
+controls to the existing RingCentral dialer and Settings menu; it does not launch
+`SpicyLamar.exe`, create a keypad popup, or operate a separate dashboard.
 
-- **Before:** RingCentral's keypad detached → "The keypad is now open in a new window." + manual Pin on top.
-- **After (v1.0 Integrated):** that flow is **eliminated** — the keypad *is* the right panel inside the dashboard. The string no longer exists in the binary. `Reattach keypad` just ensures `keypadPanel.Visible=true, Dock=Right` and logs `Keypad reattached inside dashboard (no popup).` No new HWND. `Pin window on top` syncs to the main window's `WS_EX_TOPMOST` (SetWindowPos) and dropdown.
+## What was fixed
 
-RingCentral menu items become the **Settings Bar** dropdown (340×265, #202020): `Pin ON` · `Reattach [Docked]` · `Emergency address confirmation` · `RingOut OFF` · `Incoming call rules` · `Voicemail greeting` · `Phone settings`.
+The patch no longer relies on a fragile single `index.html` edit. It now:
 
-## Screenshot — Single Window Layout
-```
-┌─ SETTINGS BAR (H=38, #1A1A1A, bottom border #303030) ─────────────────┐
-│ 🌶 SPICY LAMAR v1.0 — Integrated  My caller ID: (754) 654-0339        │
-│                              [⏸ PAUSE] [🧪 TEST] [⚙ SETTINGS ▼] [✕ EXIT] │
-├──────────────────────────────┬────────────────────────────────────────┤
-│ LEFT PANE (#050505)          │ RIGHT KEYPAD (W=280, #101010)          │
-│ STATUS: [🌶 ACTIVE] F11=PAUSE│ KEYPAD [reattached ✓]                  │
-│ CALLS: 0  UPTIME: 12s  LAST  │ [ Enter a name or number        | C ] │
-│ [ REAL-TIME TELEMETRY ]      │  1      2 ABC  3 DEF                   │
-│  <20us: ███  <40us: ██       │  4 GHI  5 JKL  6 MNO                   │
-│ [ SYSTEM LOG ]               │  7 PQRS 8 TUV  9 WXYZ                  │
-│  12:00:00.123 [INF] Integrated│  *     0 +    #                       │
-│  ... 10 lines neon #00FF66   │  [▶ CALL #00963C] [■ END #8C1E1E]     │
-│ F8 F9 F11 F12  ALT+F1         │  ⌫ Backspace • Type • Enter=Call      │
-└──────────────────────────────┴────────────────────────────────────────┘
-Dropdown on ⚙: Pin ON (blue) · Reattach Docked · Emergency · RingOut OFF · …
+1. injects the renderer engine through RingCentral's Electron main process after
+   each RingCentral renderer load (works with hashed/bundled renderer files);
+2. also patches a discovered existing preload so the renderer has a narrow,
+   explicit bridge for its settings;
+3. keeps state in RingCentral's Electron user-data folder and re-syncs it after
+   renderer reloads; and
+4. retains an `index.html` insertion only as an idempotent compatibility fallback.
 
-Palette: Obsidian #050505, Settings #1A1A1A, Panel #101010, Display #161616, Btn #262626/Hover #404040/Active #FF3300, Border #303030, Neon #00FF66, Chili #FF3300, CALL #00963C→#00B450, END #8C1E1E→#B42828. Fonts: Consolas 14, Segoe UI Bold 14-20, Segoe UI Bold 10.
-```
+## Scope and safety
 
-> **Mockup image:** see `docs/mockup.png` (generated) — shows the exact rendered layout with neon histogram and docked keypad. The window is `WS_POPUP | WS_CAPTION | WS_SYSMENU`, `WS_EX_TOPMOST` toggleable, draggable by the settings bar (`HTCAPTION`).
+**Every Spicy Lamar control is scoped to RingCentral.**
 
-> ## ⚠️ Two run modes
-> **Recommended — feature inside RingCentral itself:** run `build.bat`. It unpacks RC's
-> `resources/app.asar`, injects the Spicy Lamar engine (`ringcentral-patch/spicy-engine/`), repacks,
-> and **launches the patched RingCentral** — a 🌶 SPICY button + “Spicy Lamar — Auto-Answer” entry
-> appear in RC's own dialer/⚙ menu (no popup, no separate exe). It needs your RingCentral app
-> (auto-detected if installed, or drop a `RingCentral.zip` / app folder in the repo root). If none is
-> found it opens `docs/INAPP_GUIDE.html` with the exact steps.
->
-> **Legacy — standalone demo exe:** run `build_standalone.bat` to compile + launch the old separate
-> 980×620 mirror window. This is optional and no longer the intended flow.
+- `🌶 SPICY ON/OFF` is inserted immediately beside RingCentral's own **CALL**
+  control. It toggles only the in-app auto-answer engine.
+- RingCentral's Settings menu receives **Spicy Lamar — Auto-Answer** and
+  **Pin RingCentral on top** entries.
+- Auto-answer clicks only a visible **Answer/Accept** element inside a visible
+  incoming-call surface in the current RingCentral renderer.
+- DTMF and call helper paths click RingCentral's own keypad/CALL controls or
+  update RingCentral's own controlled dial field. They do not synthesize input
+  to the desktop.
+- Pin-on-top calls Electron `setAlwaysOnTop` on the RingCentral BrowserWindow
+  that sent the request—not on any other application window.
+- The in-app path installs **no global hotkeys, no `SendInput`, no Alt+F1
+  cascade, no focus stealing, and no extra process/window**.
 
-## Quick Start (feature inside RingCentral)
-1. Double-click **`build.bat`**. It needs your RingCentral app:
-   - auto-detects the app you already run (`%LocalAppData%\RingCentral`), **or**
-   - accepts a `RingCentral.zip` / unpacked app folder (with `resources\app.asar`) placed in the repo root.
-2. build.bat unpacks `app.asar`, injects `ringcentral-patch\spicy-engine\`, repacks, and **launches the patched RingCentral**.
-3. Open the dialer → you'll see a **🌶 SPICY** button and a **“Spicy Lamar — Auto-Answer [ON]”** entry in the ⚙ menu.
-4. No RC found? build.bat opens `docs/INAPP_GUIDE.html` telling you exactly what to drop in (so it never silently does nothing).
+The legacy native sources remain in the repository for historical reference, but
+are **not used** by the supported flow. `build_portable.bat` and
+`build_standalone.bat` intentionally redirect to `build.bat`, so the top-level
+launchers cannot create a separate desktop control window.
 
-> Tuning: if no 🌶 button appears after first launch, open the dialer DevTools (**Ctrl+Shift+I**), read the
-> `[SpicyLamar]` logs, and adjust the DOM selectors in `ringcentral-patch\spicy-engine\spicy-config.js`
-> to your RC version, then re-run build.bat.
+## Install into RingCentral (Windows)
 
-## In-app engine (`ringcentral-patch/spicy-engine/`)
-| File | Runs in | Role |
+1. Close RingCentral so its next launch reads the patched app bundle.
+2. Double-click **`build.bat`** from this repository.
+   - It automatically looks in common RingCentral install locations.
+   - Or use PowerShell with an explicit source:
+
+   ```powershell
+   .\ringcentral-patch\apply-patch.ps1 -Source C:\path\to\RingCentral.zip
+   # source may also be an unpacked RingCentral folder or resources\app.asar
+   ```
+
+3. The script extracts `resources\app.asar`, makes an `app.asar.bak` backup,
+   installs the in-app engine, repacks the archive, and launches RingCentral.
+4. Open RingCentral's **dialer**. The `🌶 SPICY ON/OFF` button appears beside
+   its Call control. Open its Settings menu for the Auto-Answer and Pin entries.
+
+If no `app.asar` is found, the script changes nothing and `build.bat` opens
+`docs/INAPP_GUIDE.html` with the source-location options.
+
+## In-app controls
+
+| RingCentral location | Control | Result |
 |---|---|---|
-| `spicy-renderer.js` | RC renderer | Injects the 🌶 SPICY button + ⚙ menu item; auto-answers calls and sends DTMF **inside** RC (no popup). |
-| `spicy-main.js` | RC main | Pin-on-top (`setAlwaysOnTop`) + toggle persistence; fully guarded. |
-| `spicy-preload.js` | RC preload | `window.spicyLamar` contextBridge (optional). |
-| `spicy-config.js` | main+renderer | One place to tune DOM selectors / timing for your RC build. |
+| Dialer action row | `🌶 SPICY ON/OFF` | Enables/disables auto-answer in this RingCentral app. |
+| Settings menu | `Spicy Lamar — Auto-Answer [ON/OFF]` | Same in-app auto-answer state. |
+| Settings menu | `Pin RingCentral on top [ON/OFF]` | Pins/unpins only RingCentral's Electron window. |
 
-See `ringcentral-patch/README.md` and `docs/INAPP_GUIDE.html` for details.
+The renderer exposes these **RingCentral-document-only** DevTools helpers when
+selector tuning is needed:
 
-> **Legacy standalone demo** (optional): `build_standalone.bat` compiles `SpicyLamar.cs` and **launches**
-> the old 980×620 mirror window. It is not the intended flow anymore.
-
-## Controls
-| Input | Action |
-|---|---|
-| **F8** | Self-test — forces 6-shot Alt+F1 cascade, logs `SELF-TEST: PASSED` |
-| **F9** | Show/Hide dashboard |
-| **F11** / **PAUSE pill** | Pause/Start engine (also tray menu + tooltip + log) |
-| **F12** / **EXIT pill** | Exit |
-| **⚙ SETTINGS ▼** | Opens dropdown (7 items from screenshot) |
-| **Pin window on top [ON]** | Calls `SetWindowPos(HWND_TOPMOST/NOTOPMOST)` — syncs bar + tray |
-| **Reattach keypad [Docked]** | `keypadPanel.Visible=true + Dock=Right` → log `Keypad reattached inside dashboard (no popup).` |
-| **Digits 0-9 * # +** | Append to buffer + `SendDtmf()` (log `KEYPAD: sent DTMF 'X'`) |
-| **Enter / ▶ CALL** | `SendDialString(buffer)` then `TryAnswer(CHAN_KEYPAD)` (6-shot to every RC popup → log `ANSWERED`) |
-| **Backspace / [C]** | Delete last char / clear |
-| **Esc / ■ END** | `PostMessage VK_ESCAPE` to RC + clear buffer |
-| **Type 5 while focused** | Appends `5` + sends DTMF (keyboard path mirrors click) |
-
-## DTMF / CALL Engine
-- `bool SendDtmf(wchar_t)` + `SendDialString(wstring)` validate `0-9*#+`
-- `CollectRingCentralWindows()` — `EnumWindows` → title contains `RingCentral/Glip/RingMe` **OR** process name `ringcentral/glip/rcdesktop` (psapi + QueryFullProcessImageNameW)
-- `PostMessage WM_CHAR` to main+child + `WM_KEYDOWN/UP`, plus `SendInput KEYEVENTF_UNICODE` if foreground is RingCentral (in-call DTMF)
-- Rate: **TURBO 200Hz poll (5ms)**, **100ms poll floor / 50ms storm floor**, WindowCache, WinEventHook + ShellHook multi-channel sensors
-- Priority **HIGH** (not Realtime), **0.5ms NT timer** (`NtSetTimerResolution`), **MMCSS Pro Audio** (`AvSetMmThreadCharacteristicsW`)
-- Startup log: `Spicy Lamar v1.0 Integrated online. Keypad docked inside dashboard (no separate window).`
-
-## Build Instructions
-### Recommended — In-app (feature inside RingCentral)
-```bat
-build.bat
-:: 1) locates RingCentral, 2) unpacks + injects ringcentral-patch\spicy-engine\,
-:: 3) repacks resources\app.asar, 4) LAUNCHES the patched RingCentral.
-:: No RC found → opens docs\INAPP_GUIDE.html so you always get a result.
+```js
+window.__spicyInject()          // rerun in-app UI insertion
+window.__spicySet('autoAnswer', true)
+window.__spicySet('pinned', false)
+window.__spicySendDtmf('5')     // uses RC's visible keypad/field only
+window.__spicyPlaceCall('5551234') // uses RC's field + Call button only
 ```
 
-### Legacy — standalone demo exe (optional)
-```bat
-build_standalone.bat     :: compiles SpicyLamar.cs → launches dist\SpicyLamar.exe
-build_portable.bat       :: C++ static /MT monolith (src/main.cpp), TURBO 200Hz
-:: or: powershell -ExecutionPolicy Bypass -File build\build.ps1
+## Files
+
+```text
+ringcentral-patch/
+├── apply-patch.ps1                 # extract → inject → repack → launch
+├── spicy-engine/
+│   ├── spicy-main.js                # RC BrowserWindow-only pin + injector
+│   ├── spicy-preload.js             # narrow settings bridge
+│   ├── spicy-renderer.js            # dialer/menu UI + in-RC auto-answer
+│   └── spicy-config.js              # version-specific selectors and timing
+└── styles/spicy-button.css          # styles isolated to #spicy-lamar-* IDs
 ```
 
-### Helpers in `build\`
-- `build.bat` / `build.ps1` — C++ monolith (src/main.cpp 980×620, 38px bar, 280px panel)
-- `verify_deps.ps1` — checks VC++ + csc.exe + resources
-- `verify_artifact.ps1` — PE32+ x64 GUI, icon, version 1.0 Integrated, no popup string
-- `package_portable.ps1` — zips `SpicyLamar.exe` + `README.txt` → `SpicyLamar-Portable.zip`
+## If a control does not appear
 
-## Portability (legacy standalone exe)
-Zero external dependencies. Static `/MT` CRT. Manifest `asInvoker`. Win10/11 x64 (ARM64 via x64 emulation). No UAC.
+RingCentral's proprietary DOM changes between versions. Open RingCentral's
+DevTools, inspect its console for `[SpicyLamar]`, and tune selectors in
+`ringcentral-patch/spicy-engine/spicy-config.js`. The renderer is idempotent:
+re-running the patch or `window.__spicyInject()` will not duplicate controls.
 
-## File Structure
-```
-SpicyLamar-Integrated/
-├── build.bat              // ★ Recommended: patch RC in-app + LAUNCH it (opens guide if no RC found)
-├── build_standalone.bat   // legacy C# mirror compile + launch
-├── src/main.cpp           // C++ monolith (legacy standalone mirror)
-├── SpicyLamar.cs          // C# WinForms mirror (legacy standalone)
-├── ringcentral-patch/     // ★ in-app engine + patch pipeline
-│   ├── apply-patch.ps1        // unpack → inject → repack → launch
-│   ├── spicy-engine/          // spicy-renderer.js, spicy-main.js, spicy-preload.js, spicy-config.js
-│   ├── inject-spicy-button.js, electron-main-patch.js, patch.diff, styles/
-│   └── README.md
-├── build/build.ps1, build.bat, build_portable.bat, CMakeLists.txt, verify_*.ps1, package_portable.ps1
-├── resources/app.manifest (asInvoker), app.rc (1.0.0.0), icon.ico, icon_src.png
-├── dist/README.txt
-├── docs/INAPP_GUIDE.html, INTEGRATED_PROMPT.md, README.md, QUICKSTART.txt, mockup*.png
-└── README.md
-```
+## Restore
 
-## Acceptance Checklist (verified)
-- [x] Single window 980×620, title Spicy Lamar v1.0 — Integrated, no second keypad window
-- [x] Settings bar 4 pills; PAUSE toggles; TEST runs self-test; SETTINGS dropdown 7 items; EXIT quits; Pin syncs TopMost
-- [x] Keypad docked right with display placeholder, 12 buttons (1 ABC…), CALL/END, hint; click logs DTMF
-- [x] Keyboard 5/Enter/Backspace/Esc work while focused; Pin actually pins
-- [x] Reattach does NOT open new window
-- [x] CALL with "123" sends 3 DTMFs + fires Alt+F1 cascade to every RC popup (log shows ANSWERED)
-- [x] Auto-answer still works (F8 self-test passes) with process-name fallback
-- [x] No string "The keypad is now open in a new window." remains — verified by `verify_artifact.ps1`
-
-## Log Proof
-```
-12:00:00.123 [INF] Spicy Lamar v1.0 Integrated online. Keypad docked inside dashboard (no separate window).
-12:00:00.150 [INF] Engine STARTED (F11) — auto-answer active
-12:00:00.200 [INF] KEYPAD: sent DTMF '2'
-12:00:01.500 [INF] ANSWERED via 6-Shot Cascade [Chan: 4] in 42us
-12:00:02.000 [INF] Keypad reattached inside dashboard (no popup).
-```
-
----
-🌶️ **SPICY LAMAR v1.0 Integrated — ONE window, ONE exe, zero popups**
+To restore the original app bundle, close RingCentral and replace
+`resources\app.asar` with `resources\app.asar.bak` created by the patcher.
